@@ -340,14 +340,28 @@ undeploy-c9s-%: bin/kubectl
 	$(info # Undeploying notebook from $(NOTEBOOK_DIR) directory...)
 	$(KUBECTL_BIN) delete -k $(NOTEBOOK_DIR)
 
+# Function for preparing a version overrides file to be used in tests  if its defined for the given workbench
+#   ARG 1: Notebook name
+#   ARG 2: UBI flavor
+#   ARG 3: Python kernel
+define handle_test_version_overrides
+	$(eval TEST_VERSION_OVERRIDE_FILE := version_overrides.ini)
+	$(eval REPO_TEST_DIRECTORY := $(NOTEBOOK_REPO_BRANCH_BASE)/jupyter/$(1)/$(2)-$(3)/test)
+	if $(KUBECTL_BIN) exec $(FULL_NOTEBOOK_NAME) -- /bin/sh -c "wget -q --spider ${REPO_TEST_DIRECTORY}/${TEST_VERSION_OVERRIDE_FILE}"; then
+		$(KUBECTL_BIN) exec $(FULL_NOTEBOOK_NAME) -- /bin/sh -c "wget ${REPO_TEST_DIRECTORY}/${TEST_VERSION_OVERRIDE_FILE} -O ${TEST_VERSION_OVERRIDE_FILE}"
+	fi	
+endef
+
 # Function for testing a notebook with papermill
 #   ARG 1: Notebook name
-#   ARG 1: UBI flavor
-#   ARG 1: Python kernel
+#   ARG 2: UBI flavor
+#   ARG 3: Python kernel
 define test_with_papermill
 	$(eval PREFIX_NAME := $(subst /,-,$(1)_$(2)))
+	$(eval TEST_NOTEBOOK_FILE := test_notebook.ipynb)
+	$(eval REPO_TEST_DIRECTORY := $(NOTEBOOK_REPO_BRANCH_BASE)/jupyter/$(1)/$(2)-$(3)/test)
 	$(KUBECTL_BIN) exec $(FULL_NOTEBOOK_NAME) -- /bin/sh -c "python3 -m pip install papermill"
-	if ! $(KUBECTL_BIN) exec $(FULL_NOTEBOOK_NAME) -- /bin/sh -c "wget ${NOTEBOOK_REPO_BRANCH_BASE}/jupyter/$(1)/$(2)-$(3)/test/test_notebook.ipynb -O test_notebook.ipynb && python3 -m papermill test_notebook.ipynb $(PREFIX_NAME)_output.ipynb --kernel python3 --stderr-file $(PREFIX_NAME)_error.txt" ; then
+	if ! $(KUBECTL_BIN) exec $(FULL_NOTEBOOK_NAME) -- /bin/sh -c "wget ${REPO_TEST_DIRECTORY}/${TEST_NOTEBOOK_FILE} -O ${TEST_NOTEBOOK_FILE} && python3 -m papermill ${TEST_NOTEBOOK_FILE} $(PREFIX_NAME)_output.ipynb --kernel python3 --stderr-file $(PREFIX_NAME)_error.txt" ; then
 		echo "ERROR: The $(1) $(2) notebook encountered a failure. To investigate the issue, you can review the logs located in the ocp-ci cluster on 'artifacts/notebooks-e2e-tests/jupyter-$(1)-$(2)-$(3)-test-e2e' directory or run 'cat $(PREFIX_NAME)_error.txt' within your container. The make process has been aborted."
 		exit 1
 	fi
@@ -364,40 +378,57 @@ test-%: bin/kubectl
 	# Verify the notebook's readiness by pinging the /api endpoint
 	$(eval NOTEBOOK_NAME := $(subst .,-,$(subst cuda-,,$*)))
 	$(eval PYTHON_VERSION := $(shell echo $* | sed 's/.*-python-//'))
+	$(eval PYTHON_FLAVOR := python-$(PYTHON_VERSION))
 	$(info # Running tests for $(NOTEBOOK_NAME) notebook...)
 	$(KUBECTL_BIN) wait --for=condition=ready pod -l app=$(NOTEBOOK_NAME) --timeout=600s
 	$(KUBECTL_BIN) port-forward svc/$(NOTEBOOK_NAME)-notebook 8888:8888 & curl --retry 5 --retry-delay 5 --retry-connrefused http://localhost:8888/notebook/opendatahub/jovyan/api ; EXIT_CODE=$$?; echo && pkill --full "^$(KUBECTL_BIN).*port-forward.*"
 	$(eval FULL_NOTEBOOK_NAME = $(shell ($(KUBECTL_BIN) get pods -l app=$(NOTEBOOK_NAME) -o custom-columns=":metadata.name" | tr -d '\n')))
 
+	if echo "$(FULL_NOTEBOOK_NAME)" | grep -q "-ubi9-"; then
+		$(eval UBI_FLAVOR := ubi9)
+		echo
+	fi
+
 	# Tests notebook's functionalities
-	if echo "$(FULL_NOTEBOOK_NAME)" | grep -q "minimal-ubi9"; then
-		$(call test_with_papermill,minimal,ubi9,python-$(PYTHON_VERSION))
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "intel-tensorflow-ubi9"; then
-		$(call test_with_papermill,intel/tensorflow,ubi9,python-$(PYTHON_VERSION))
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "intel-pytorch-ubi9"; then
-		$(call test_with_papermill,intel/pytorch,ubi9,python-$(PYTHON_VERSION))
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "datascience-ubi9"; then
-		$(MAKE) validate-ubi9-datascience PYTHON_VERSION=$(PYTHON_VERSION) -e FULL_NOTEBOOK_NAME=$(FULL_NOTEBOOK_NAME)
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "pytorch-ubi9"; then
-		$(MAKE) validate-ubi9-datascience PYTHON_VERSION=$(PYTHON_VERSION) -e FULL_NOTEBOOK_NAME=$(FULL_NOTEBOOK_NAME)
-		$(call test_with_papermill,pytorch,ubi9,python-$(PYTHON_VERSION))
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "tensorflow-ubi9"; then
-		$(MAKE) validate-ubi9-datascience PYTHON_VERSION=$(PYTHON_VERSION) -e FULL_NOTEBOOK_NAME=$(FULL_NOTEBOOK_NAME)
-		$(call test_with_papermill,tensorflow,ubi9,python-$(PYTHON_VERSION))
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "intel-ml-ubi9"; then
-		$(call test_with_papermill,intel/ml,ubi9,python-$(PYTHON_VERSION))
-	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "trustyai-ubi9"; then
-		$(call test_with_papermill,trustyai,ubi9,python-$(PYTHON_VERSION))
+	if echo "$(FULL_NOTEBOOK_NAME)" | grep -q "minimal"; then
+		$(eval NOTEBOOK_ID := minimal)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "intel-tensorflow"; then
+		$(eval NOTEBOOK_ID := intel/tensorflow)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "intel-pytorch"; then
+		$(eval NOTEBOOK_ID := intel/pytorch)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "datascience"; then
+		$(eval NOTEBOOK_ID := datascience)
+		$(call handle_test_version_overrides,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+		$(MAKE) validate-datascience -e PYTHON_FLAVOR=$(PYTHON_FLAVOR) -e UBI_FLAVOR=$(UBI_FLAVOR) -e FULL_NOTEBOOK_NAME=$(FULL_NOTEBOOK_NAME)
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "pytorch"; then
+		$(eval NOTEBOOK_ID := pytorch)
+		$(call handle_test_version_overrides,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+		$(MAKE) validate-datascience -e PYTHON_FLAVOR=$(PYTHON_FLAVOR) -e UBI_FLAVOR=$(UBI_FLAVOR) -e FULL_NOTEBOOK_NAME=$(FULL_NOTEBOOK_NAME)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "tensorflow"; then
+		$(eval NOTEBOOK_ID := tensorflow)
+		$(call handle_test_version_overrides,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+		$(MAKE) validate-datascience -e PYTHON_FLAVOR=$(PYTHON_FLAVOR) -e UBI_FLAVOR=$(UBI_FLAVOR) -e FULL_NOTEBOOK_NAME=$(FULL_NOTEBOOK_NAME)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "intel-ml"; then
+		$(eval NOTEBOOK_ID := intel/ml)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "trustyai"; then
+		$(eval NOTEBOOK_ID := trustyai)
+		$(call test_with_papermill,$(NOTEBOOK_ID),$(UBI_FLAVOR),$(PYTHON_FLAVOR))
 	elif echo "$(FULL_NOTEBOOK_NAME)" | grep -q "anaconda"; then
 		echo "There is no test notebook implemented yet for Anaconda Notebook...."
 	else
 		echo "No matching condition found for $(FULL_NOTEBOOK_NAME)."
 	fi
 
-.PHONY: validate-ubi9-datascience
-validate-ubi9-datascience:
-	$(call test_with_papermill,minimal,ubi9,python-$(PYTHON_VERSION))
-	$(call test_with_papermill,datascience,ubi9,python-$(PYTHON_VERSION))
+.PHONY: validate-datascience
+validate-datascience:
+	$(call test_with_papermill,minimal,$(UBI_FLAVOR),$(PYTHON_FLAVOR))
+	$(call test_with_papermill,datascience,$(UBI_FLAVOR),$(PYTHON_FLAVOR))
 
 # Validate that runtime image meets minimum criteria
 # This validation is created from subset of https://github.com/elyra-ai/elyra/blob/9c417d2adc9d9f972de5f98fd37f6945e0357ab9/Makefile#L325
