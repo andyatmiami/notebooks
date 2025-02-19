@@ -217,7 +217,7 @@ runtime-datascience-ubi9-python-3.9: base-ubi9-python-3.9
 
 # Build and push runtime-pytorch-ubi9-python-3.9 image to the registry
 .PHONY: runtime-pytorch-ubi9-python-3.9
-runtime-pytorch-ubi9-python-3.9: base-ubi9-python-3.9
+runtime-cuda-pytorch-ubi9-python-3.9: cuda-ubi9-python-3.9
 	$(call image,$@,runtimes/pytorch/ubi9-python-3.9,$<)
 
 # Build and push runtime-cuda-tensorflow-ubi9-python-3.9 image to the registry
