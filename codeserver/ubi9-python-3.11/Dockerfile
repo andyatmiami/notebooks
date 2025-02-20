@@ -18,27 +18,12 @@ USER 0
 
 WORKDIR /opt/app-root/bin
 
-# Install usefull packages from Pipfile.lock
-COPY ${SOURCE_CODE}/Pipfile.lock ./
-
-# Install packages and cleanup
-RUN echo "Installing softwares and packages" && \
-    micropipenv install && \
-    rm -f ./Pipfile.lock && \
-    # Fix permissions to support pip in Openshift environments \
-    chmod -R g+w /opt/app-root/lib/python3.11/site-packages && \
-    fix-permissions /opt/app-root -P
-
 # Install usefull OS packages
 RUN dnf install -y jq git-lfs libsndfile && dnf clean all && rm -rf /var/cache/yum
 
 # Install code-server
 RUN yum install -y "https://github.com/coder/code-server/releases/download/${CODESERVER_VERSION}/code-server-${CODESERVER_VERSION/v/}-amd64.rpm" && \
     yum -y clean all --enablerepo='*'
-
-# Change ownership of relevant directories
-RUN chmod -R g+w /opt/app-root/lib/python3.11/site-packages && \
-    fix-permissions /opt/app-root -P
 
 COPY --chown=1001:0 ${SOURCE_CODE}/utils utils/
 
@@ -116,8 +101,21 @@ ENV SHELL /bin/bash
 
 ENV PYTHONPATH=/opt/app-root/bin/python3
 
+USER 1001
+
+# Install usefull packages from Pipfile.lock
+COPY ${SOURCE_CODE}/Pipfile.lock ./
+
+# Install packages and cleanup
+RUN echo "Installing softwares and packages" && \
+    micropipenv install && \
+    rm -f ./Pipfile.lock && \
+    # Fix permissions to support pip in Openshift environments \
+    chmod -R g+w /opt/app-root/lib/python3.11/site-packages && \
+    fix-permissions /opt/app-root -P
+
+
 WORKDIR /opt/app-root/src
 
-USER 1001
 
 CMD ["/opt/app-root/bin/run-code-server.sh"]
