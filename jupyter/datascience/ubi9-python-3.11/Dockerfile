@@ -15,29 +15,12 @@ LABEL name="odh-notebook-jupyter-datascience-ubi9-python-3.11" \
 
 WORKDIR /opt/app-root/bin
 
-# Install Python packages and Jupyterlab extensions from Pipfile.lock
-COPY ${SOURCE_CODE}/Pipfile.lock ./
-
-# Copy Elyra setup to utils so that it's sourced at startup
-COPY ${SOURCE_CODE}/setup-elyra.sh ./utils/
-
-RUN echo "Installing softwares and packages" && \
-    micropipenv install && \
-    rm -f ./Pipfile.lock && \
-    # Fix permissions to support pip in Openshift environments \
-    chmod -R g+w /opt/app-root/lib/python3.11/site-packages && \
-    fix-permissions /opt/app-root -P
-
-COPY ${SOURCE_CODE}/utils ./utils/
 
 # OS Packages needs to be installed as root
 USER root
 
 # Install usefull OS packages
 RUN dnf install -y jq unixODBC postgresql git-lfs libsndfile && dnf clean all && rm -rf /var/cache/yum
-
-# Disable announcement plugin of jupyterlab
-RUN jupyter labextension disable "@jupyterlab/apputils-extension:announcements"
 
 # Install MongoDB Client, We need a special repo for MongoDB as they do their own distribution
 COPY ${SOURCE_CODE}/mongodb-org-6.0.repo-x86_64 /etc/yum.repos.d/mongodb-org-6.0.repo
@@ -53,6 +36,24 @@ ENV PATH="$PATH:/opt/mssql-tools18/bin"
 
 # Other apps and tools installed as default user
 USER 1001
+
+# Install Python packages and Jupyterlab extensions from Pipfile.lock
+COPY ${SOURCE_CODE}/Pipfile.lock ./
+
+# Copy Elyra setup to utils so that it's sourced at startup
+COPY ${SOURCE_CODE}/setup-elyra.sh ./utils/
+
+RUN echo "Installing softwares and packages" && \
+    micropipenv install && \
+    rm -f ./Pipfile.lock && \
+    # Fix permissions to support pip in Openshift environments \
+    chmod -R g+w /opt/app-root/lib/python3.11/site-packages && \
+    fix-permissions /opt/app-root -P
+
+COPY ${SOURCE_CODE}/utils ./utils/
+
+# Disable announcement plugin of jupyterlab
+RUN jupyter labextension disable "@jupyterlab/apputils-extension:announcements"
 
 # setup path for runtime configuration
 RUN mkdir /opt/app-root/runtimes && \
