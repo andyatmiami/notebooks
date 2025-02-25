@@ -155,8 +155,8 @@ cuda-jupyter-tensorflow-ubi9-python-3.11: cuda-jupyter-datascience-ubi9-python-3
 	$(call image,$@,jupyter/tensorflow/ubi9-python-3.11,$<)
 
 # Build and push jupyter-pytorch-ubi9-python-3.11 image to the registry
-.PHONY: jupyter-pytorch-ubi9-python-3.11
-jupyter-pytorch-ubi9-python-3.11: cuda-jupyter-datascience-ubi9-python-3.11
+.PHONY: cuda-jupyter-pytorch-ubi9-python-3.11
+cuda-jupyter-pytorch-ubi9-python-3.11: cuda-jupyter-datascience-ubi9-python-3.11
 	$(call image,$@,jupyter/pytorch/ubi9-python-3.11,$<)
 
 # Build and push jupyter-trustyai-ubi9-python-3.11 image to the registry
@@ -175,8 +175,8 @@ runtime-datascience-ubi9-python-3.11: base-ubi9-python-3.11
 	$(call image,$@,runtimes/datascience/ubi9-python-3.11,$<)
 
 # Build and push runtime-pytorch-ubi9-python-3.11 image to the registry
-.PHONY: runtime-pytorch-ubi9-python-3.11
-runtime-pytorch-ubi9-python-3.11: base-ubi9-python-3.11
+.PHONY: runtime-cuda-pytorch-ubi9-python-3.11
+runtime-cuda-pytorch-ubi9-python-3.11: cuda-ubi9-python-3.11
 	$(call image,$@,runtimes/pytorch/ubi9-python-3.11,$<)
 
 # Build and push runtime-cuda-tensorflow-ubi9-python-3.11 image to the registry
