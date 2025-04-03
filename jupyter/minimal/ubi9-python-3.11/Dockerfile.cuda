@@ -14,9 +14,6 @@ RUN dnf install -y mesa-libGL skopeo && dnf clean all && rm -rf /var/cache/yum
 # Other apps and tools installed as default user
 USER 1001
 
-# Install micropipenv to deploy packages from Pipfile.lock
-RUN pip install --no-cache-dir -U "micropipenv[toml]"
-
 # Install the oc client
 RUN curl -L https://mirror.openshift.com/pub/openshift-v4/$(uname -m)/clients/ocp/stable/openshift-client-linux.tar.gz \
         -o /tmp/openshift-client-linux.tar.gz && \
@@ -135,7 +132,7 @@ RUN yum install -y \
     ${NV_CUDNN_PACKAGE_DEV} \
     && yum clean all \
     && rm -rf /var/cache/yum/*
-    
+
 # Set this flag so that libraries can find the location of CUDA
 ENV XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda
 
@@ -146,7 +143,7 @@ WORKDIR /opt/app-root/src
 #########################
 # cuda-jupyter-minimal  #
 #########################
-FROM cuda-base AS cuda-jupyter-minimal  
+FROM cuda-base AS cuda-jupyter-minimal
 
 ARG JUPYTER_REUSABLE_UTILS=jupyter/utils
 ARG MINIMAL_SOURCE_CODE=jupyter/minimal/ubi9-python-3.11
@@ -165,12 +162,11 @@ WORKDIR /opt/app-root/bin
 
 COPY ${JUPYTER_REUSABLE_UTILS} utils/
 
-COPY ${MINIMAL_SOURCE_CODE}/Pipfile.lock ${MINIMAL_SOURCE_CODE}/start-notebook.sh ./
+COPY ${MINIMAL_SOURCE_CODE}/requirements.txt ${MINIMAL_SOURCE_CODE}/start-notebook.sh ./
 
 # Install Python dependencies from Pipfile.lock file
 RUN echo "Installing softwares and packages" && \
-    micropipenv install && \
-    rm -f ./Pipfile.lock && \
+    pip install -r ./requirements.txt && \
     # Disable announcement plugin of jupyterlab \
     jupyter labextension disable "@jupyterlab/apputils-extension:announcements" && \
     # Replace Notebook's launcher, "(ipykernel)" with Python's version 3.x.y \
@@ -180,7 +176,7 @@ RUN echo "Installing softwares and packages" && \
     fix-permissions /opt/app-root -P && \
     # Apply JupyterLab addons \
     /opt/app-root/bin/utils/addons/apply.sh
-    
+
 WORKDIR /opt/app-root/src
 
 ENTRYPOINT ["start-notebook.sh"]
